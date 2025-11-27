@@ -1,0 +1,834 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Plus, Trash2, Sparkles, Loader2, Search, Calendar, MapPin, Eye, ShieldAlert, Baby, Users, Save, AlertCircle, AlertTriangle, FileText, UserCog, RefreshCw, ChevronDown, ChevronUp, Book, BookmarkPlus, Clock, Copy, Info } from 'lucide-react';
+import { PrescriptionState, Medication, AiSuggestionResponse, Doctor, MedicalProtocol } from '../types';
+import { suggestPrescription, checkInteractions } from '../services/geminiService';
+import { getUsageInfo, recordSuggestionUsage, formatCountdown } from '../services/usageService';
+import { v4 as uuidv4 } from 'uuid';
+import QuickPrescriptions from './QuickPrescriptions';
+import CopyTextModal from './CopyTextModal';
+
+interface EditorProps {
+  state: PrescriptionState;
+  setState: React.Dispatch<React.SetStateAction<PrescriptionState>>;
+  onPreview: () => void;
+  onSave: () => void;
+  onCertificate: () => void;
+  // Guest Mode Props
+  isGuest?: boolean;
+  guestDoctor?: Doctor;
+  onUpdateGuestDoctor?: (doctor: Doctor) => void;
+}
+
+// Standard unit options
+const UNIT_OPTIONS = [
+  "Caixa(s)",
+  "Frasco(s)",
+  "Comprimido(s)",
+  "Ampola(s)",
+  "Bisnaga(s)",
+  "Envelope(s)",
+  "Unidade(s)",
+  "Lata(s)",
+  "Pacote(s)",
+  "Uso Contínuo"
+];
+
+// Helper to check if quantity is excessive based on unit
+const isQuantityExcessive = (quantity: string, unit: string): boolean => {
+  const qty = parseInt(quantity);
+  if (isNaN(qty)) return false;
+
+  switch (unit) {
+    case "Caixa(s)":
+      return qty > 3; // Warn on 4+ (Standard 3 month treatment usually max 3 boxes)
+    case "Comprimido(s)":
+      return qty > 90; // Warn on 91+
+    case "Frasco(s)":
+    case "Bisnaga(s)":
+    case "Lata(s)":
+    case "Pacote(s)":
+      return qty > 5; // Warn on 6+
+    case "Ampola(s)":
+      return qty > 10;
+    case "Envelope(s)":
+    case "Unidade(s)":
+      return qty > 30;
+    default:
+      return qty > 10;
+  }
+};
+
+const Editor: React.FC<EditorProps> = ({ 
+  state, 
+  setState, 
+  onPreview, 
+  onSave, 
+  onCertificate,
+  isGuest,
+  guestDoctor,
+  onUpdateGuestDoctor
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [interactionWarning, setInteractionWarning] = useState<string | null>(null);
+  const [checkingInteractions, setCheckingInteractions] = useState(false);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Usage Limits State - Disabled for now
+  // const [timeRemaining, setTimeRemaining] = useState(0);
+  // const [dailyRemaining, setDailyRemaining] = useState(10);
+  // const [isDailyLimitReached, setIsDailyLimitReached] = useState(false);
+
+  // Quick Prescriptions State
+  const [isQuickPrescriptionsOpen, setIsQuickPrescriptionsOpen] = useState(false);
+  const [protocolToCreate, setProtocolToCreate] = useState<Partial<MedicalProtocol> | null>(null);
+
+  // Copy Text Modal State
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+
+  // Custom Instructions State
+  const [isInstructionsExpanded, setIsInstructionsExpanded] = useState(false);
+
+  // Monitor Usage Limits - Disabled
+  /*
+  useEffect(() => {
+    const updateLimits = () => {
+      const info = getUsageInfo();
+      setTimeRemaining(info.cooldownRemaining);
+      setDailyRemaining(info.dailyRemaining);
+      setIsDailyLimitReached(info.isDailyLimitReached);
+    };
+
+    updateLimits(); // Initial check
+    const interval = setInterval(updateLimits, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, []);
+  */
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, field: keyof PrescriptionState) => {
+    setState(prev => ({ ...prev, [field]: e.target.value }));
+  };
+
+  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof PrescriptionState) => {
+    setState(prev => ({ ...prev, [field]: e.target.checked }));
+  };
+
+  const handlePatientChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof PrescriptionState['patient']) => {
+    setState(prev => ({
+      ...prev,
+      patient: { ...prev.patient, [field]: e.target.value }
+    }));
+  };
+
+  const handlePatientCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof PrescriptionState['patient']) => {
+     setState(prev => ({
+      ...prev,
+      patient: { ...prev.patient, [field]: e.target.checked }
+    }));
+  };
+  
+  // Guest Doctor Updates
+  const handleGuestDoctorChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof Doctor) => {
+    if (onUpdateGuestDoctor && guestDoctor) {
+      onUpdateGuestDoctor({
+        ...guestDoctor,
+        [field]: e.target.value
+      });
+    }
+  };
+  
+  const handleResetGuestDoctor = () => {
+     if (onUpdateGuestDoctor) {
+       onUpdateGuestDoctor({
+         name: "Visitante (Exemplo)",
+         crm: "00000-UF",
+         specialty: "Clínica Médica"
+       });
+     }
+  };
+
+  const addMedication = () => {
+    setState(prev => ({
+      ...prev,
+      medications: [
+        ...prev.medications,
+        { id: uuidv4(), name: '', dosage: '', quantity: '', unit: 'Caixa(s)', frequency: '', duration: '', instructions: '', isAiSuggested: false }
+      ]
+    }));
+  };
+
+  const removeMedication = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      medications: prev.medications.filter(m => m.id !== id)
+    }));
+    setInteractionWarning(null); // Clear warning on change
+  };
+
+  const updateMedication = (id: string, field: keyof Medication, value: string) => {
+    setState(prev => ({
+      ...prev,
+      medications: prev.medications.map(m => m.id === id ? { ...m, [field]: value } : m)
+    }));
+    setInteractionWarning(null); // Clear warning on change
+  };
+
+  // Disabled AI Handler
+  const handleAiSuggest = async () => {
+    /*
+    if (!state.diagnosis) return;
+    
+    // UI Checks (Redundant but provides instant feedback)
+    if (timeRemaining > 0) {
+      alert(`Você só pode gerar uma nova sugestão a cada 5 minutos. Aguarde ${formatCountdown(timeRemaining)}.`);
+      return;
+    }
+    if (isDailyLimitReached) {
+      alert("Limite diário atingido. Você poderá gerar novas sugestões amanhã.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Call service FIRST. The service checks permissions internally.
+      // If we record usage before calling, the service will see "just used" and block it.
+      const result: AiSuggestionResponse | null = await suggestPrescription(
+        state.diagnosis, 
+        state.patient.age || "30",
+        state.patient.isPediatric,
+        state.patient.pediatricData
+      );
+      
+      // Record usage ONLY after passed guard or success to start cooldown
+      recordSuggestionUsage();
+
+      if (result && result.medications) {
+        const newMeds = result.medications.map(m => ({
+          id: uuidv4(),
+          ...m,
+          // Ensure new fields are present if AI omits them (fallback)
+          quantity: m.quantity || "1",
+          unit: m.unit || "Caixa(s)",
+          isAiSuggested: true // Mark as AI suggested
+        }));
+        setState(prev => ({
+          ...prev,
+          medications: newMeds
+        }));
+      }
+    } catch (err: any) {
+      if (err.message?.includes("Limite de uso")) {
+         alert(err.message);
+      } else {
+         console.error(err);
+         alert("Erro ao gerar sugestão. Tente novamente mais tarde.");
+      }
+    } finally {
+      setLoading(false);
+    }
+    */
+  };
+
+  const handleCheckInteractions = async () => {
+    if (state.medications.length === 0) return;
+    setCheckingInteractions(true);
+    // Include dosage/freq in the check for better pediatric analysis
+    const medsInfo = state.medications.map(m => `${m.name} ${m.dosage} (${m.frequency})`).filter(Boolean);
+    const warning = await checkInteractions(
+      medsInfo, 
+      state.patient.isPregnant || false,
+      state.patient.isPediatric || false,
+      state.patient.pediatricData || ""
+    );
+    setInteractionWarning(warning);
+    setCheckingInteractions(false);
+  };
+
+  const openDatePicker = () => {
+    try {
+      dateInputRef.current?.showPicker();
+    } catch (error) {
+      // Fallback for browsers that don't support showPicker
+      dateInputRef.current?.focus();
+    }
+  };
+
+  // --- Custom Instructions Logic ---
+
+  const insertFormatting = (char: string) => {
+    setState(prev => ({ ...prev, customInstructions: prev.customInstructions + char }));
+  };
+
+  // --- Quick Protocol Handlers ---
+  const handleInsertProtocol = (newMeds: Omit<Medication, 'id'>[], newInstructions?: string) => {
+    const medsToAdd = newMeds.map(m => ({ ...m, id: uuidv4() }));
+    
+    setState(prev => ({
+      ...prev,
+      medications: [...prev.medications, ...medsToAdd],
+      customInstructions: newInstructions 
+        ? (prev.customInstructions ? prev.customInstructions + '\n\n' + newInstructions : newInstructions)
+        : prev.customInstructions
+    }));
+  };
+
+  const handleSaveAsProtocol = () => {
+    if (state.medications.length === 0) {
+      alert("Adicione medicamentos antes de salvar como protocolo.");
+      return;
+    }
+    
+    // Prepare data for the modal
+    setProtocolToCreate({
+      name: '',
+      subcategory: '',
+      category: 'Clínica Geral e MFC', // Changed to match new type
+      customInstructions: state.customInstructions,
+      medications: state.medications.map(({ id, ...rest }) => rest) // Strip IDs
+    });
+    setIsQuickPrescriptionsOpen(true);
+  };
+
+  const handleOpenCopyModal = () => {
+    if (state.medications.length === 0) {
+      alert("Adicione medicamentos para copiar.");
+      return;
+    }
+    setIsCopyModalOpen(true);
+  };
+
+  // Determine button text and state - UNUSED in disabled state but kept for reference
+  /*
+  const getButtonText = () => {
+    if (loading) return "Gerando...";
+    if (isDailyLimitReached) return "Limite Diário";
+    if (timeRemaining > 0) return `Disponível em ${formatCountdown(timeRemaining)}`;
+    return "Sugerir Prescrição";
+  };
+
+  const isButtonDisabled = loading || !state.diagnosis || timeRemaining > 0 || isDailyLimitReached;
+  */
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 h-full flex flex-col transition-colors duration-200 relative">
+      <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-t-xl flex justify-between items-center">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+          <span className="bg-blue-600 w-1 h-6 rounded-full block"></span>
+          Dados da Prescrição
+        </h2>
+        
+        {/* Save as Protocol Button */}
+        <button
+          onClick={handleSaveAsProtocol}
+          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1 font-medium bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-100 dark:border-blue-800 transition-colors"
+          title="Salvar prescrição atual como um novo protocolo"
+        >
+          <BookmarkPlus size={14} />
+          Salvar como Protocolo
+        </button>
+      </div>
+      
+      <div className="p-6 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
+        
+        {/* Guest Mode Doctor Customization */}
+        {isGuest && guestDoctor && (
+           <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 mb-6 animate-in slide-in-from-top-2">
+              <div className="flex justify-between items-start mb-3">
+                <h3 className="text-sm font-bold text-indigo-900 dark:text-indigo-100 flex items-center gap-2">
+                   <UserCog className="h-4 w-4" />
+                   Identificação do Profissional (Modo Visitante)
+                </h3>
+                <button 
+                   onClick={handleResetGuestDoctor}
+                   className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 flex items-center gap-1"
+                   title="Restaurar padrão"
+                >
+                   <RefreshCw className="h-3 w-3" /> Restaurar
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                 <div>
+                    <label className="block text-xs text-indigo-700 dark:text-indigo-300 mb-1 font-medium">Nome do Médico</label>
+                    <input
+                        type="text"
+                        value={guestDoctor.name}
+                        onChange={(e) => handleGuestDoctorChange(e, 'name')}
+                        className="w-full p-2 border border-indigo-200 dark:border-indigo-700 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        placeholder="Dr. Nome Sobrenome"
+                    />
+                 </div>
+                 <div>
+                    <label className="block text-xs text-indigo-700 dark:text-indigo-300 mb-1 font-medium">Especialidade</label>
+                    <input
+                        type="text"
+                        value={guestDoctor.specialty}
+                        onChange={(e) => handleGuestDoctorChange(e, 'specialty')}
+                        className="w-full p-2 border border-indigo-200 dark:border-indigo-700 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        placeholder="Ex: Cardiologista"
+                    />
+                 </div>
+                 <div>
+                    <label className="block text-xs text-indigo-700 dark:text-indigo-300 mb-1 font-medium">CRM / UF</label>
+                    <input
+                        type="text"
+                        value={guestDoctor.crm}
+                        onChange={(e) => handleGuestDoctorChange(e, 'crm')}
+                        className="w-full p-2 border border-indigo-200 dark:border-indigo-700 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        placeholder="Ex: 12345-SP"
+                    />
+                 </div>
+              </div>
+              <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-2 italic">
+                 Como visitante, você pode alterar estes dados livremente. Para salvar seu perfil permanentemente, crie uma conta.
+              </p>
+           </div>
+        )}
+
+        {/* Patient Info */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+          <div className="md:col-span-8">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome do Paciente</label>
+            <input
+              type="text"
+              value={state.patient.name}
+              onChange={(e) => handlePatientChange(e, 'name')}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-medical-500 focus:border-transparent outline-none transition placeholder-gray-400 dark:placeholder-gray-500"
+              placeholder="Ex: João da Silva"
+            />
+          </div>
+          <div className="md:col-span-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
+               Data da Prescrição
+            </label>
+            <div className="relative cursor-pointer" onClick={openDatePicker}>
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={state.date}
+                onChange={(e) => handleInputChange(e, 'date')}
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none pr-10 dark:[color-scheme:dark] cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 pointer-events-none">
+                <Calendar className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+          
+          {!state.patient.isPediatric && (
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Idade (Anos)</label>
+              <input
+                type="number"
+                value={state.patient.age}
+                onChange={(e) => handlePatientChange(e, 'age')}
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none placeholder-gray-400 dark:placeholder-gray-500"
+                placeholder="30"
+              />
+            </div>
+          )}
+
+          <div className="md:col-span-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPF (Opcional)</label>
+            <input
+              type="text"
+              value={state.patient.document}
+              onChange={(e) => handlePatientChange(e, 'document')}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none placeholder-gray-400 dark:placeholder-gray-500"
+              placeholder="000.000.000-00"
+            />
+          </div>
+
+          {/* Special Conditions: Pregnancy & Pediatric */}
+          <div className="md:col-span-5 flex flex-col gap-2">
+             {/* Pregnancy */}
+            <div className="flex items-center gap-2 bg-pink-50 dark:bg-pink-900/20 px-3 py-2 rounded-lg border border-pink-100 dark:border-pink-900/30 w-full">
+                <input
+                    id="isPregnant"
+                    type="checkbox"
+                    checked={state.patient.isPregnant || false}
+                    onChange={(e) => handlePatientCheckboxChange(e, 'isPregnant')}
+                    className="w-4 h-4 text-pink-600 border-gray-300 dark:border-gray-600 rounded focus:ring-pink-500 bg-white dark:bg-gray-700"
+                />
+                <label htmlFor="isPregnant" className="font-medium text-pink-700 dark:text-pink-300 text-sm cursor-pointer select-none flex items-center gap-1.5">
+                    <Users className="h-4 w-4" />
+                    Paciente Gestante
+                </label>
+            </div>
+
+            {/* Pediatric */}
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-900/20 px-3 py-2 rounded-lg border border-orange-100 dark:border-orange-900/30 w-full">
+                  <input
+                      id="isPediatric"
+                      type="checkbox"
+                      checked={state.patient.isPediatric || false}
+                      onChange={(e) => handlePatientCheckboxChange(e, 'isPediatric')}
+                      className="w-4 h-4 text-orange-600 border-gray-300 dark:border-gray-600 rounded focus:ring-orange-500 bg-white dark:bg-gray-700"
+                  />
+                  <label htmlFor="isPediatric" className="font-medium text-orange-700 dark:text-orange-300 text-sm cursor-pointer select-none flex items-center gap-1.5">
+                      <Baby className="h-4 w-4" />
+                      Paciente Pediátrico
+                  </label>
+              </div>
+              
+              {state.patient.isPediatric && (
+                <div className="mt-2 ml-4 animate-in slide-in-from-top-2 duration-200">
+                  <label className="block text-xs font-semibold text-orange-800 dark:text-orange-300 mb-1">Idade Detalhada / Peso</label>
+                  <input
+                    type="text"
+                    value={state.patient.pediatricData || ''}
+                    onChange={(e) => handlePatientChange(e, 'pediatricData')}
+                    className="w-full p-2 border border-orange-200 dark:border-orange-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-md text-sm focus:ring-1 focus:ring-orange-500 outline-none placeholder-orange-300 dark:placeholder-orange-500/50"
+                    placeholder="Ex: 2 anos, 12kg"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="md:col-span-12">
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                id="includeAddress"
+                type="checkbox"
+                checked={state.includeAddress}
+                onChange={(e) => handleCheckboxChange(e, 'includeAddress')}
+                className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-700"
+              />
+              <label htmlFor="includeAddress" className="font-medium text-gray-700 dark:text-gray-300 text-sm cursor-pointer select-none flex items-center gap-1">
+                <MapPin className="h-3 w-3" /> Incluir Endereço
+              </label>
+            </div>
+            
+            {state.includeAddress && (
+              <input
+                type="text"
+                value={state.patient.address || ''}
+                onChange={(e) => handlePatientChange(e, 'address')}
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none placeholder-gray-400 dark:placeholder-gray-500 animate-in slide-in-from-top-1 fade-in duration-200"
+                placeholder="Rua, Número, Bairro, Cidade - UF"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* AI Diagnosis Section - TEMPORARILY DISABLED */}
+        <div className="bg-amber-50 dark:bg-amber-900/20 p-6 rounded-xl border border-amber-200 dark:border-amber-800 flex items-start gap-4">
+          <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-full shrink-0">
+             <Sparkles className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+             <h3 className="text-amber-900 dark:text-amber-100 font-bold text-sm uppercase tracking-wide mb-2">
+                Recurso em Breve
+             </h3>
+             <p className="text-amber-800 dark:text-amber-200 text-sm leading-relaxed">
+                A função de Inteligência Artificial estará disponível em breve para auxiliar no diagnóstico e na criação de prescrições.
+                Por enquanto, utilize a aba <span className="font-bold">Prescrições Rápidas por Sistema</span> ou insira manualmente suas medicações.
+             </p>
+          </div>
+        </div>
+
+        {/* Medication List */}
+        <div>
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-md font-semibold text-gray-800 dark:text-gray-200">Medicamentos</h3>
+            <div className="flex gap-2">
+               {(state.medications.length > 0) && (
+                <button
+                  onClick={handleCheckInteractions}
+                  disabled={checkingInteractions}
+                  className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 px-3 py-1.5 rounded-md border border-amber-200 dark:border-amber-800 transition flex items-center gap-1 opacity-50 cursor-not-allowed"
+                  title="Temporariamente indisponível"
+                >
+                  {checkingInteractions ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                  Verificar Segurança
+                </button>
+              )}
+              <button
+                onClick={addMedication}
+                className="text-sm text-medical-600 dark:text-medical-400 hover:text-medical-700 dark:hover:text-medical-300 font-medium flex items-center gap-1 px-2 py-1 rounded-md hover:bg-medical-50 dark:hover:bg-medical-900/30 transition"
+              >
+                <Plus className="h-4 w-4" />
+                Adicionar Item
+              </button>
+            </div>
+          </div>
+          
+          {/* Quick Prescriptions Trigger */}
+          <div className="mb-4">
+             <button 
+               onClick={() => { setProtocolToCreate(null); setIsQuickPrescriptionsOpen(true); }}
+               className="w-full py-2 border-2 border-dashed border-blue-200 dark:border-blue-800 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-blue-300 transition-all flex items-center justify-center gap-2 text-sm font-medium"
+             >
+                <Book className="h-4 w-4" />
+                Prescrições Rápidas por Sistema
+             </button>
+          </div>
+          
+          {interactionWarning && (
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 dark:border-red-600 rounded-r-lg shadow-sm animate-in slide-in-from-top-2 duration-300">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-red-100 dark:bg-red-800/50 rounded-full shrink-0">
+                  <ShieldAlert className="h-6 w-6 text-red-600 dark:text-red-400" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-base font-bold text-red-800 dark:text-red-200 flex items-center gap-2">
+                    Alerta de Segurança / Interação
+                  </h4>
+                  <div className="mt-1 text-sm text-red-700 dark:text-red-300 leading-relaxed whitespace-pre-line">
+                     {interactionWarning}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/40 px-3 py-1.5 rounded w-fit">
+                    ⚠️ Recomendada revisão clínica detalhada antes da prescrição.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {state.medications.map((med, index) => (
+              <div key={med.id} className="group p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-medical-300 dark:hover:border-medical-600 hover:shadow-sm transition bg-white dark:bg-gray-900 relative">
+                <div className="absolute -left-3 top-4 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 z-10">
+                  {index + 1}
+                </div>
+                <button
+                  onClick={() => removeMedication(med.id)}
+                  className="absolute top-2 right-2 text-gray-400 hover:text-red-500 dark:hover:text-red-400 p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all"
+                  title="Remover"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+                
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  {/* Row 1: Name, Dosage, Qty, Unit */}
+                  <div className="md:col-span-6">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
+                      Medicamento (Genérico)
+                      {med.isAiSuggested && (
+                        <span className="inline-flex items-center gap-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 font-medium select-none" title="Sugerido por Inteligência Artificial">
+                          <Sparkles size={10} /> IA
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      className="w-full text-sm font-medium p-1.5 border-b border-gray-200 dark:border-gray-700 focus:border-medical-500 dark:focus:border-medical-400 outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600"
+                      placeholder="Nome do fármaco"
+                      value={med.name}
+                      onChange={(e) => updateMedication(med.id, 'name', e.target.value)}
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Concentração</label>
+                    <div className="relative">
+                      <input
+                        className="w-full text-sm p-1.5 border-b border-gray-200 dark:border-gray-700 focus:border-medical-500 dark:focus:border-medical-400 outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 pr-7"
+                        placeholder="ex: 500mg"
+                        value={med.dosage}
+                        onChange={(e) => updateMedication(med.id, 'dosage', e.target.value)}
+                      />
+                      {!med.dosage && (
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400" title="Por segurança, informe a concentração (ex: 500mg, 5ml)">
+                          <AlertCircle size={16} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="md:col-span-1">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Qtd</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        className="w-full text-sm p-1.5 border-b border-gray-200 dark:border-gray-700 focus:border-medical-500 dark:focus:border-medical-400 outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 pr-7"
+                        placeholder="1"
+                        value={med.quantity}
+                        onChange={(e) => updateMedication(med.id, 'quantity', e.target.value)}
+                      />
+                      {!med.quantity ? (
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400" title="Quantidade obrigatória">
+                          <AlertCircle size={16} />
+                        </div>
+                      ) : isQuantityExcessive(med.quantity, med.unit) ? (
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 text-amber-500 dark:text-amber-400" title="Quantidade parece elevada para a unidade selecionada. Verifique.">
+                          <AlertTriangle size={16} />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
+                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Unidade</label>
+                     <select
+                      className="w-full text-sm p-1.5 border-b border-gray-200 dark:border-gray-700 focus:border-medical-500 dark:focus:border-medical-400 outline-none bg-transparent text-gray-900 dark:text-gray-100"
+                      value={med.unit}
+                      onChange={(e) => updateMedication(med.id, 'unit', e.target.value)}
+                     >
+                       {UNIT_OPTIONS.map(opt => (
+                         <option key={opt} value={opt} className="text-gray-900 bg-white dark:bg-gray-800">{opt}</option>
+                       ))}
+                     </select>
+                  </div>
+
+                  {/* Row 2: Posology, Duration, Instructions */}
+                  <div className="md:col-span-4">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Posologia (Frequência)</label>
+                    <input
+                      className="w-full text-sm p-1.5 border-b border-gray-200 dark:border-gray-700 focus:border-medical-500 dark:focus:border-medical-400 outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600"
+                      placeholder="ex: 8/8h"
+                      value={med.frequency}
+                      onChange={(e) => updateMedication(med.id, 'frequency', e.target.value)}
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Duração</label>
+                    <input
+                      className="w-full text-sm p-1.5 border-b border-gray-200 dark:border-gray-700 focus:border-medical-500 dark:focus:border-medical-400 outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600"
+                      placeholder="ex: 7 dias"
+                      value={med.duration}
+                      onChange={(e) => updateMedication(med.id, 'duration', e.target.value)}
+                    />
+                  </div>
+                  <div className="md:col-span-5">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Instruções Especiais</label>
+                    <input
+                      className="w-full text-sm p-1.5 border-b border-gray-200 dark:border-gray-700 focus:border-medical-500 dark:focus:border-medical-400 outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600"
+                      placeholder="ex: Tomar com água"
+                      value={med.instructions}
+                      onChange={(e) => updateMedication(med.id, 'instructions', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {state.medications.length === 0 && (
+              <div className="text-center py-8 text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+                <p>Nenhum medicamento adicionado.</p>
+                <p className="text-sm">Use o botão acima ou a aba de protocolos para começar.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Custom Instructions Section */}
+        <div className="border-t border-dashed border-gray-300 dark:border-gray-700 pt-6 mt-6">
+          <div className="flex items-center justify-between mb-2">
+            <button 
+              onClick={() => setIsInstructionsExpanded(!isInstructionsExpanded)}
+              className="flex items-center gap-2 text-base font-semibold text-gray-800 dark:text-gray-200 hover:text-medical-600 dark:hover:text-medical-400 transition-colors"
+            >
+               {isInstructionsExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+               Orientações Personalizadas
+            </button>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                <input 
+                  type="checkbox"
+                  checked={state.includeCustomInstructions}
+                  onChange={(e) => handleCheckboxChange(e, 'includeCustomInstructions')}
+                  className="rounded border-gray-300 dark:border-gray-600 text-medical-600 focus:ring-medical-500"
+                />
+                Imprimir na Receita
+              </label>
+            </div>
+          </div>
+
+          {!isInstructionsExpanded && state.customInstructions && (
+             <div className="pl-6 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xl italic">
+               {state.customInstructions}
+             </div>
+          )}
+
+          {isInstructionsExpanded && (
+            <div className="mt-3 animate-in slide-in-from-top-2 duration-200">
+               <div className="flex items-center gap-2 mb-2">
+                  <button 
+                    onClick={() => insertFormatting('• ')}
+                    className="p-1.5 text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded border border-gray-200 dark:border-gray-600 text-xs font-medium"
+                    title="Inserir Marcador"
+                  >
+                    • Lista
+                  </button>
+                  <button 
+                    onClick={() => insertFormatting('*')}
+                    className="p-1.5 text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded border border-gray-200 dark:border-gray-600 text-xs font-bold"
+                    title="Negrito (Envolver texto)"
+                  >
+                    B
+                  </button>
+                  <div className="h-4 w-px bg-gray-300 dark:bg-gray-600 mx-1"></div>
+               </div>
+
+               <textarea
+                  value={state.customInstructions}
+                  onChange={(e) => handleInputChange(e, 'customInstructions')}
+                  className="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-medical-500 outline-none text-sm leading-relaxed font-mono"
+                  placeholder="Digite as orientações aqui..."
+               />
+               <div className="flex justify-end mt-1">
+                 <button 
+                   onClick={() => setState(prev => ({ ...prev, customInstructions: '' }))}
+                   className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                 >
+                   <Trash2 size={12} /> Limpar orientações
+                 </button>
+               </div>
+            </div>
+          )}
+        </div>
+
+      </div>
+      
+      <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-b-xl flex justify-end gap-3">
+        <button
+          onClick={onCertificate}
+          className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white px-5 py-3 rounded-lg font-semibold text-lg shadow-sm transition-all flex items-center gap-2 mr-auto"
+        >
+          <FileText className="h-5 w-5" />
+          Gerar Atestado
+        </button>
+
+        {/* Copy as Text Button */}
+        <button
+          onClick={handleOpenCopyModal}
+          className="bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-4 py-3 rounded-lg font-semibold flex items-center gap-2 shadow-sm transition-colors"
+          title="Copiar prescrição como texto"
+        >
+          <Copy className="h-5 w-5" />
+          <span className="hidden sm:inline">Copiar como Texto</span>
+        </button>
+
+        <button
+          onClick={onSave}
+          className="bg-white hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-5 py-3 rounded-lg font-semibold text-lg shadow-sm transition-all flex items-center gap-2"
+        >
+          <Save className="h-5 w-5" />
+          Salvar
+        </button>
+        <button
+          onClick={onPreview}
+          className="bg-medical-600 hover:bg-medical-700 dark:bg-medical-600 dark:hover:bg-medical-500 text-white px-6 py-3 rounded-lg font-semibold text-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 flex items-center gap-2"
+        >
+           <Eye className="h-5 w-5" />
+           Pré-visualizar Receita
+        </button>
+      </div>
+
+      <QuickPrescriptions 
+        isOpen={isQuickPrescriptionsOpen} 
+        onClose={() => setIsQuickPrescriptionsOpen(false)} 
+        onInsert={handleInsertProtocol}
+        initialDataForCreation={protocolToCreate}
+      />
+
+      <CopyTextModal
+        isOpen={isCopyModalOpen}
+        onClose={() => setIsCopyModalOpen(false)}
+        medications={state.medications}
+        customInstructions={state.customInstructions}
+      />
+
+    </div>
+  );
+};
+
+export default Editor;
