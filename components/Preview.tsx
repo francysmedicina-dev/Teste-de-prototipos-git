@@ -1,5 +1,6 @@
+
 import React, { useState, useRef } from 'react';
-import { ArrowLeft, Printer, FileDown, Loader2, Copy, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown, Loader2, Copy, CheckCircle, GraduationCap } from 'lucide-react';
 import { PrescriptionState, Doctor, Institution, Medication } from '../types';
 
 // --- Constants & Helpers ---
@@ -47,6 +48,7 @@ interface PreviewProps {
   hideTextHeader: boolean;
   onAutoSave: () => void;
   onSaveAndExit: () => void;
+  isStudentMode?: boolean; // New Prop
 }
 
 interface PrescriptionPaperProps {
@@ -228,7 +230,7 @@ const PrescriptionPaper: React.FC<PrescriptionPaperProps> = ({
 
 // --- Main Component ---
 
-const Preview: React.FC<PreviewProps> = ({ state, setState, doctor, institution, onBack, customHeaderImage, hideTextHeader, onAutoSave, onSaveAndExit }) => {
+const Preview: React.FC<PreviewProps> = ({ state, setState, doctor, institution, onBack, customHeaderImage, hideTextHeader, onAutoSave, onSaveAndExit, isStudentMode }) => {
   const [printCopies, setPrintCopies] = useState<1 | 2>(1);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -391,53 +393,67 @@ const Preview: React.FC<PreviewProps> = ({ state, setState, doctor, institution,
   return (
     <div className="h-full flex flex-col bg-gray-100 dark:bg-gray-900 overflow-hidden">
       
+      {/* Student Mode Banner */}
+      {isStudentMode && (
+        <div className="bg-amber-100 dark:bg-amber-900/50 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 px-4 py-2 text-center text-sm font-bold flex items-center justify-center gap-2">
+           <GraduationCap className="h-4 w-4" />
+           MODO ESTUDO: Documento sem valor legal. Apenas para consulta acadêmica.
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 z-10">
          <div className="flex items-center gap-4">
             <button onClick={onBack} className="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors font-medium">
-               <ArrowLeft className="h-5 w-5" /> Voltar para Edição
+               <ArrowLeft className="h-5 w-5" /> Voltar
             </button>
             <div className="h-6 w-px bg-gray-300 dark:bg-gray-600 hidden md:block"></div>
             <h2 className="text-lg font-bold text-gray-800 dark:text-white">Pré-visualização</h2>
          </div>
 
          <div className="flex items-center gap-3">
-            <button 
-               onClick={handleToggleCopies}
-               className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all border ${
-                  printCopies === 2 
-                    ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' 
-                    : 'bg-white text-gray-700 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50'
-               }`}
-            >
-               <Copy className="h-4 w-4" />
-               {printCopies === 2 ? 'Remover 2ª Via' : 'Adicionar 2ª Via'}
-            </button>
+            {!isStudentMode && (
+              <button 
+                 onClick={handleToggleCopies}
+                 className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all border ${
+                    printCopies === 2 
+                      ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' 
+                      : 'bg-white text-gray-700 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50'
+                 }`}
+              >
+                 <Copy className="h-4 w-4" />
+                 {printCopies === 2 ? 'Remover 2ª Via' : 'Adicionar 2ª Via'}
+              </button>
+            )}
 
-            <button
-               onClick={() => handleProcessPdf('save')}
-               disabled={isGeneratingPdf}
-               className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm"
-            >
-               {isGeneratingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-               Baixar PDF
-            </button>
+            {!isStudentMode && (
+              <>
+                <button
+                   onClick={() => handleProcessPdf('save')}
+                   disabled={isGeneratingPdf}
+                   className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm"
+                >
+                   {isGeneratingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                   Baixar PDF
+                </button>
 
-            <button
-               onClick={() => handleProcessPdf('print')}
-               disabled={isPrinting}
-               className="px-4 py-2 bg-gray-900 dark:bg-gray-600 text-white rounded-lg font-medium text-sm flex items-center gap-2 hover:bg-black dark:hover:bg-gray-500 transition-colors shadow-md"
-            >
-               {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-               Imprimir
-            </button>
+                <button
+                   onClick={() => handleProcessPdf('print')}
+                   disabled={isPrinting}
+                   className="px-4 py-2 bg-gray-900 dark:bg-gray-600 text-white rounded-lg font-medium text-sm flex items-center gap-2 hover:bg-black dark:hover:bg-gray-500 transition-colors shadow-md"
+                >
+                   {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                   Imprimir
+                </button>
+              </>
+            )}
 
             <button
                onClick={onSaveAndExit}
                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-md"
             >
                <CheckCircle className="h-4 w-4" />
-               Salvar e Sair
+               {isStudentMode ? "Salvar (Estudo)" : "Salvar e Sair"}
             </button>
          </div>
       </div>

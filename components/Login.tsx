@@ -19,12 +19,25 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Login disabled temporarily
-    return;
-  };
+    setError('');
+    
+    if (!email || !password) {
+      setError("Preencha todos os campos.");
+      return;
+    }
 
-  const handleForgotPassword = () => {
-    // Disabled
+    setLoading(true);
+
+    // Simulate network delay for realism
+    setTimeout(() => {
+        const user = login(email, password);
+        if (user) {
+            onLoginSuccess(user);
+        } else {
+            setError("E-mail ou senha incorretos.");
+            setLoading(false);
+        }
+    }, 800);
   };
 
   return (
@@ -44,7 +57,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
           </p>
         </div>
 
-        {/* Error Message (Hidden generally as login is disabled, but kept for structure) */}
+        {/* Error Message */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 rounded-r-lg flex items-start gap-3 animate-in slide-in-from-top-2">
              <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" />
@@ -54,7 +67,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
 
         {/* Form */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4 opacity-60 pointer-events-none select-none">
+          <div className="space-y-4">
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Endereço de e-mail
@@ -64,10 +77,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
                 name="email"
                 type="email"
                 autoComplete="email"
-                disabled
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="appearance-none relative block w-full px-3 py-3 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-500 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-medical-500 focus:border-transparent sm:text-sm bg-gray-100 dark:bg-gray-800 transition-colors cursor-not-allowed"
+                className="appearance-none relative block w-full px-3 py-3 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-500 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-medical-500 focus:border-transparent sm:text-sm bg-white dark:bg-gray-900 transition-colors"
                 placeholder="medico@exemplo.com"
               />
             </div>
@@ -78,8 +91,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
                  </label>
                  <button 
                     type="button"
-                    disabled
-                    className="text-xs font-medium text-gray-400 cursor-not-allowed"
+                    className="text-xs font-medium text-medical-600 hover:text-medical-500 dark:text-medical-400 hover:underline"
+                    onClick={() => alert("Função de recuperação de senha em desenvolvimento.")}
                  >
                     Esqueceu a senha?
                  </button>
@@ -90,16 +103,16 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
                   name="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
-                  disabled
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none relative block w-full px-3 py-3 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-500 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-medical-500 focus:border-transparent sm:text-sm bg-gray-100 dark:bg-gray-800 transition-colors pr-10 cursor-not-allowed"
+                  className="appearance-none relative block w-full px-3 py-3 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-500 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-medical-500 focus:border-transparent sm:text-sm bg-white dark:bg-gray-900 transition-colors pr-10"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
-                  disabled
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 cursor-not-allowed focus:outline-none"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -108,27 +121,23 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
             </div>
           </div>
 
-          {/* Temporary Disabled Message */}
-          <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 rounded-r-lg flex items-start gap-3">
-             <Info className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
-             <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
-                As funções de login, senha e criação de conta ainda serão adicionadas em breve. No momento, você pode acessar o aplicativo usando o modo de visitante. Lembre-se de que o histórico ficará salvo apenas no seu navegador e não será armazenado no servidor.
-             </p>
-          </div>
-
           <div className="space-y-4">
             <button
               type="submit"
-              disabled
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-medical-600 opacity-50 cursor-not-allowed shadow-none"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-medical-600 hover:bg-medical-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-medical-500 transition-all shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              <span className="flex items-center gap-2">
-                 Entrar
-                 <ArrowRight className="h-4 w-4" />
-              </span>
+              {loading ? (
+                 <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <span className="flex items-center gap-2">
+                   Entrar
+                   <ArrowRight className="h-4 w-4" />
+                </span>
+              )}
             </button>
 
-             {/* Skip Login Button - ACTIVE */}
+             {/* Skip Login Button */}
             <button
               type="button"
               onClick={onSkipLogin}
@@ -144,13 +153,14 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSwitchToRegister, onSki
 
         {/* Footer */}
         <div className="text-center mt-6">
-          <p className="text-sm text-gray-400 dark:text-gray-500 cursor-not-allowed">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Ainda não tem uma conta?{' '}
-            <span
-              className="font-medium text-gray-400 dark:text-gray-500 cursor-not-allowed decoration-slice"
+            <button
+              onClick={onSwitchToRegister}
+              className="font-medium text-medical-600 dark:text-medical-400 hover:text-medical-500 hover:underline transition-colors"
             >
               Cadastre-se gratuitamente
-            </span>
+            </button>
           </p>
         </div>
       </div>

@@ -1,16 +1,17 @@
 
 import React, { useState } from 'react';
-import { Stethoscope, UserPlus, Loader2, AlertCircle, ArrowLeft, UserX, Eye, EyeOff } from 'lucide-react';
+import { Stethoscope, UserPlus, Loader2, AlertCircle, ArrowLeft, UserX, Eye, EyeOff, GraduationCap } from 'lucide-react';
 import { register } from '../services/authService';
 import { Doctor } from '../types';
 
 interface RegisterProps {
-  onRegisterSuccess: (user: Doctor) => void;
+  onRegisterSuccess: (user: Doctor, isStudent?: boolean) => void;
   onSwitchToLogin: () => void;
   onSkipLogin: () => void;
 }
 
 const Register: React.FC<RegisterProps> = ({ onRegisterSuccess, onSwitchToLogin, onSkipLogin }) => {
+  const [isStudent, setIsStudent] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     crm: '',
@@ -50,15 +51,15 @@ const Register: React.FC<RegisterProps> = ({ onRegisterSuccess, onSwitchToLogin,
     setTimeout(() => {
       const newUser: Doctor = {
         name: formData.name,
-        crm: formData.crm,
-        specialty: formData.specialty,
+        crm: isStudent ? "ESTUDANTE" : formData.crm,
+        specialty: isStudent ? "Acadêmico de Medicina" : formData.specialty,
         email: formData.email,
-        password: formData.password // In real app, never handle raw password here
+        password: formData.password
       };
 
       const result = register(newUser);
       if (result.success && result.user) {
-        onRegisterSuccess(result.user);
+        onRegisterSuccess(result.user, isStudent);
       } else {
         setError(result.message || "Erro ao criar conta.");
         setLoading(false);
@@ -90,6 +91,32 @@ const Register: React.FC<RegisterProps> = ({ onRegisterSuccess, onSwitchToLogin,
           </p>
         </div>
 
+        {/* Student/Doctor Toggle */}
+        <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setIsStudent(false)}
+            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
+              !isStudent 
+                ? 'bg-white dark:bg-gray-600 text-medical-600 dark:text-white shadow-sm' 
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+            }`}
+          >
+            <Stethoscope className="h-4 w-4" /> Sou Médico
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsStudent(true)}
+            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${
+              isStudent 
+                ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-white shadow-sm' 
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+            }`}
+          >
+            <GraduationCap className="h-4 w-4" /> Sou Estudante
+          </button>
+        </div>
+
         {/* Error Message */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 rounded-r-lg flex items-start gap-3 animate-in slide-in-from-top-2">
@@ -104,7 +131,7 @@ const Register: React.FC<RegisterProps> = ({ onRegisterSuccess, onSwitchToLogin,
           {/* Personal Info */}
           <div className="space-y-4">
              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Nome Completo (Dr/Dra)</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Nome Completo</label>
                 <input
                     name="name"
                     type="text"
@@ -112,35 +139,39 @@ const Register: React.FC<RegisterProps> = ({ onRegisterSuccess, onSwitchToLogin,
                     value={formData.name}
                     onChange={handleChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white"
-                    placeholder="Ex: André Souza"
+                    placeholder={isStudent ? "Seu nome" : "Ex: André Souza"}
                 />
              </div>
-             <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">CRM / UF</label>
-                    <input
-                        name="crm"
-                        type="text"
-                        required
-                        value={formData.crm}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white"
-                        placeholder="12345-SP"
-                    />
-                </div>
-                <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Especialidade</label>
-                    <input
-                        name="specialty"
-                        type="text"
-                        required
-                        value={formData.specialty}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white"
-                        placeholder="Clínico Geral"
-                    />
-                </div>
-             </div>
+             
+             {/* Conditional Fields for Doctors Only */}
+             {!isStudent && (
+               <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                  <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">CRM / UF</label>
+                      <input
+                          name="crm"
+                          type="text"
+                          required={!isStudent}
+                          value={formData.crm}
+                          onChange={handleChange}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="12345-SP"
+                      />
+                  </div>
+                  <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Especialidade</label>
+                      <input
+                          name="specialty"
+                          type="text"
+                          required={!isStudent}
+                          value={formData.specialty}
+                          onChange={handleChange}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-medical-500 outline-none bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="Clínico Geral"
+                      />
+                  </div>
+               </div>
+             )}
           </div>
 
           {/* Account Info */}
@@ -207,14 +238,18 @@ const Register: React.FC<RegisterProps> = ({ onRegisterSuccess, onSwitchToLogin,
             <button
               type="submit"
               disabled={loading}
-              className="group w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-medical-600 hover:bg-medical-700 dark:bg-medical-600 dark:hover:bg-medical-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-medical-500 transition-all shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+              className={`group w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed ${
+                isStudent 
+                  ? 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500' 
+                  : 'bg-medical-600 hover:bg-medical-700 focus:ring-medical-500'
+              }`}
             >
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <span className="flex items-center gap-2">
-                   <UserPlus className="h-4 w-4" />
-                   Cadastrar e Entrar
+                   {isStudent ? <GraduationCap className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                   {isStudent ? "Acessar Área Acadêmica" : "Cadastrar e Entrar"}
                 </span>
               )}
             </button>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Editor from './components/Editor';
@@ -13,7 +12,9 @@ import Profile from './components/Profile';
 import PatientRecords from './components/PatientRecords';
 import SupportWidget from './components/SupportWidget';
 import HospitalMode from './components/HospitalMode'; 
-import SoapGenerator from './components/SoapGenerator'; // Import SOAP Generator
+import SoapGenerator from './components/SoapGenerator';
+import StudentDashboard from './components/StudentDashboard'; // New Component
+import QuickPrescriptions from './components/QuickPrescriptions'; // New Import
 import { DisclaimerBanner } from './components/DisclaimerBanner';
 import { PrescriptionState, Doctor, SavedPrescription, Institution } from './types';
 import { savePrescriptionToHistory, getHeaderImage, getHeaderSettings, getCurrentInstitution, savePatientRecord } from './services/storageService';
@@ -61,14 +62,18 @@ function App() {
   const [isGuest, setIsGuest] = useState(false);
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
   
+  // Student Mode State
+  const [isStudentMode, setIsStudentMode] = useState(false);
+  
   // Guest Mode Editable State
   const [guestDoctor, setGuestDoctor] = useState<Doctor>(MOCK_DOCTOR);
 
   // App State
   const [state, setState] = useState<PrescriptionState>(INITIAL_STATE);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  // Added 'soap' to viewMode type
-  const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'certificate' | 'profile' | 'records' | 'soap'>('editor');
+  
+  // Added 'student-dashboard' and 'student-protocols' to viewMode type
+  const [viewMode, setViewMode] = useState<'editor' | 'preview' | 'certificate' | 'profile' | 'records' | 'soap' | 'student-dashboard' | 'student-protocols'>('editor');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -97,6 +102,11 @@ function App() {
     const sessionUser = getSession();
     if (sessionUser) {
       setUser(sessionUser);
+      // Check if CRM is "ESTUDANTE" to re-enable student mode from session
+      if (sessionUser.crm === 'ESTUDANTE') {
+        setIsStudentMode(true);
+        setViewMode('student-dashboard');
+      }
     }
   }, [isDarkMode]);
 
@@ -105,12 +115,34 @@ function App() {
   const handleLoginSuccess = (loggedInUser: Doctor) => {
     setUser(loggedInUser);
     setIsGuest(false);
+    // Simple check if user is a student (mock logic based on CRM)
+    if (loggedInUser.crm === 'ESTUDANTE') {
+      setIsStudentMode(true);
+      setViewMode('student-dashboard');
+    } else {
+      setIsStudentMode(false);
+      setViewMode('editor');
+    }
+  };
+
+  // Modified Register Success to handle Student Toggle
+  const handleRegisterSuccess = (loggedInUser: Doctor, isStudent?: boolean) => {
+    setUser(loggedInUser);
+    setIsGuest(false);
+    if (isStudent) {
+      setIsStudentMode(true);
+      setViewMode('student-dashboard');
+    } else {
+      setIsStudentMode(false);
+      setViewMode('editor');
+    }
   };
 
   const handleLogout = () => {
     logout();
     setUser(null);
     setIsGuest(false);
+    setIsStudentMode(false);
     setAuthView('login');
     // Reset guest doctor to default
     setGuestDoctor(MOCK_DOCTOR);
@@ -122,6 +154,7 @@ function App() {
   const handleSkipLogin = () => {
     setIsGuest(true);
     setUser(null);
+    setIsStudentMode(false);
   };
   
   const handleProfileUpdate = (updatedUser: Doctor) => {
@@ -140,7 +173,7 @@ function App() {
       return;
     }
     savePrescriptionToHistory(state);
-    alert("Modelo salvo no histórico com sucesso!");
+    alert(isStudentMode ? "Modelo salvo para estudo!" : "Modelo salvo no histórico com sucesso!");
   };
 
   const handleLoadHistory = (saved: SavedPrescription) => {
@@ -184,8 +217,21 @@ function App() {
       date: today
     });
 
-    // 3. Navigate back to Editor
-    setViewMode('editor');
+    // 3. Navigate back
+    if (isStudentMode) {
+      setViewMode('student-dashboard');
+    } else {
+      setViewMode('editor');
+    }
+  };
+
+  // Student Navigation Handling
+  const handleStudentNav = (target: 'soap' | 'protocols') => {
+    if (target === 'soap') {
+      setViewMode('soap');
+    } else if (target === 'protocols') {
+      setViewMode('student-protocols');
+    }
   };
 
   const renderContent = () => {
@@ -193,6 +239,34 @@ function App() {
     const activeDoctor = user || guestDoctor;
 
     switch (viewMode) {
+      case 'student-dashboard':
+        return (
+          <div className="h-full animate-in fade-in duration-300">
+            <StudentDashboard 
+              user={user}
+              onOpenSoap={() => handleStudentNav('soap')}
+              onOpenProtocols={() => handleStudentNav('protocols')}
+              onOpenHospital={() => setIsHospitalModeOpen(true)}
+            />
+          </div>
+        );
+      case 'student-protocols':
+        return (
+          <div className="h-full animate-in fade-in duration-300 relative">
+             <StudentDashboard 
+              user={user}
+              onOpenSoap={() => handleStudentNav('soap')}
+              onOpenProtocols={() => {}}
+              onOpenHospital={() => setIsHospitalModeOpen(true)}
+            />
+            <QuickPrescriptions 
+               isOpen={true} 
+               onClose={() => setViewMode('student-dashboard')} 
+               onInsert={() => {}} 
+               isStudentMode={true}
+            />
+          </div>
+        );
       case 'editor':
         return (
           <div className="h-full max-w-4xl mx-auto animate-in fade-in duration-300">
@@ -222,6 +296,7 @@ function App() {
               hideTextHeader={hideTextHeader}
               onAutoSave={() => handleAutoSave('prescription')}
               onSaveAndExit={handleSaveAndExit}
+              isStudentMode={isStudentMode} // Pass the prop
              />
           </div>
         );
@@ -248,7 +323,8 @@ function App() {
                <Profile 
                  user={user} 
                  onUpdateUser={handleProfileUpdate} 
-                 onBack={() => setViewMode('editor')} 
+                 onBack={() => isStudentMode ? setViewMode('student-dashboard') : setViewMode('editor')} 
+                 isStudentMode={isStudentMode}
                />
              ) : (
                 <div className="text-center p-10">
@@ -264,14 +340,16 @@ function App() {
               <PatientRecords 
                  doctor={activeDoctor} 
                  onLoadRecord={handleLoadRecord} 
-                 onBack={() => setViewMode('editor')}
+                 onBack={() => isStudentMode ? setViewMode('student-dashboard') : setViewMode('editor')}
               />
            </div>
         );
       case 'soap':
         return (
           <div className="h-full animate-in fade-in duration-300">
-            <SoapGenerator />
+            <SoapGenerator 
+               onBack={isStudentMode ? () => setViewMode('student-dashboard') : undefined}
+            />
           </div>
         );
       default:
@@ -290,7 +368,7 @@ function App() {
       />
     ) : (
       <Register 
-        onRegisterSuccess={handleLoginSuccess} 
+        onRegisterSuccess={handleRegisterSuccess} 
         onSwitchToLogin={() => setAuthView('login')}
         onSkipLogin={handleSkipLogin}
       />
@@ -308,9 +386,10 @@ function App() {
         onOpenProfile={() => setViewMode('profile')}
         onOpenHelp={() => setIsHelpOpen(true)}
         onOpenHospitalMode={() => setIsHospitalModeOpen(true)}
-        onOpenSoap={() => setViewMode('soap')} // Connect Handler
+        onOpenSoap={() => setViewMode('soap')} 
         onLogout={handleLogout}
-        user={user} 
+        user={user}
+        isStudentMode={isStudentMode}
       />
       
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">

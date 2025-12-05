@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, ChevronRight, ChevronDown, Plus, Star, Trash2, Book, Activity, Stethoscope, Heart, Pill, Brain, Bone, Thermometer, Edit2, Save, ArrowLeft, Eye, Ear, Baby, Users, Droplets, Zap, Bug, Copy } from 'lucide-react';
+import { X, Search, ChevronRight, ChevronDown, Plus, Star, Trash2, Book, Activity, Stethoscope, Heart, Pill, Brain, Bone, Thermometer, Edit2, Save, ArrowLeft, Eye, Ear, Baby, Users, Droplets, Zap, Bug, Copy, BookOpen } from 'lucide-react';
 import { MedicalProtocol, ProtocolCategory, Medication } from '../types';
 import { getProtocols, toggleProtocolFavorite, deleteCustomProtocol, updateCustomProtocol, saveCustomProtocol } from '../services/protocolService';
 import CopyTextModal from './CopyTextModal';
@@ -9,6 +9,7 @@ interface QuickPrescriptionsProps {
   onClose: () => void;
   onInsert: (medications: Omit<Medication, 'id'>[], instructions?: string) => void;
   initialDataForCreation?: Partial<MedicalProtocol> | null; // If passed, opens in Create Mode with this data
+  isStudentMode?: boolean;
 }
 
 const CATEGORIES: { id: ProtocolCategory | 'Favoritos' | 'Todos'; icon: React.ReactNode; label: string }[] = [
@@ -188,7 +189,7 @@ const ProtocolEditor: React.FC<{
 };
 
 
-const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose, onInsert, initialDataForCreation }) => {
+const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose, onInsert, initialDataForCreation, isStudentMode }) => {
   const [protocols, setProtocols] = useState<MedicalProtocol[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('Favoritos');
   const [searchQuery, setSearchQuery] = useState('');
@@ -206,7 +207,7 @@ const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose
     if (isOpen) {
       loadProtocols();
       // Check if opened in "Save as Protocol" mode (creation with pre-filled data)
-      if (initialDataForCreation) {
+      if (initialDataForCreation && !isStudentMode) {
          setIsCreatingNew(true);
          setEditingProtocol(initialDataForCreation as MedicalProtocol);
       } else {
@@ -214,7 +215,7 @@ const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose
          setIsCreatingNew(false);
       }
     }
-  }, [isOpen, initialDataForCreation]);
+  }, [isOpen, initialDataForCreation, isStudentMode]);
 
   const loadProtocols = () => {
     setProtocols(getProtocols());
@@ -300,7 +301,7 @@ const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col md:flex-row border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200 overflow-hidden">
         
         {/* If Editing or Creating, show Editor full width */}
-        {(editingProtocol || isCreatingNew) ? (
+        {(editingProtocol || isCreatingNew) && !isStudentMode ? (
            <div className="w-full h-full overflow-y-auto custom-scrollbar bg-white dark:bg-gray-800">
               <ProtocolEditor 
                 protocol={editingProtocol!} 
@@ -321,12 +322,14 @@ const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose
                     <Book className="h-5 w-5 text-blue-600" />
                     Sistemas
                   </h2>
-                  <button 
-                    onClick={startCreate}
-                    className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" /> INSERIR NOVO PROTOCOLO
-                  </button>
+                  {!isStudentMode && (
+                    <button 
+                      onClick={startCreate}
+                      className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Plus className="h-3 w-3" /> INSERIR NOVO PROTOCOLO
+                    </button>
+                  )}
               </div>
               
               <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
@@ -408,7 +411,7 @@ const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose
                                           <Star className={`h-4 w-4 ${protocol.isFavorite ? 'fill-current' : ''}`} />
                                       </button>
                                       
-                                      {protocol.isCustom && (
+                                      {!isStudentMode && protocol.isCustom && (
                                           <button 
                                               onClick={(e) => handleDelete(protocol.id, e)}
                                               className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
@@ -445,29 +448,47 @@ const QuickPrescriptions: React.FC<QuickPrescriptionsProps> = ({ isOpen, onClose
                                             </div>
                                           )}
                                       </div>
-                                      
-                                      <div className="flex gap-3 flex-wrap">
-                                        <button 
-                                            onClick={() => handleInsert(protocol)}
-                                            className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
-                                        >
-                                            <Plus className="h-4 w-4" /> Inserir na Prescrição
-                                        </button>
-                                        
-                                        <button 
-                                            onClick={(e) => startEdit(protocol, e)}
-                                            className="flex-1 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
-                                        >
-                                            <Edit2 className="h-4 w-4" /> Editar Prescrição
-                                        </button>
 
-                                        <button 
+                                      {/* Reference Section */}
+                                      {protocol.reference && (
+                                        <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+                                          <p className="text-[10px] text-gray-400 dark:text-gray-500 italic flex items-center gap-1">
+                                            <BookOpen size={10} /> {protocol.reference}
+                                          </p>
+                                        </div>
+                                      )}
+                                      
+                                      {isStudentMode ? (
+                                         <button 
                                             onClick={(e) => handleOpenCopyModal(protocol, e)}
-                                            className="flex-1 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
-                                        >
-                                            <Copy className="h-4 w-4" /> Copiar como Texto
-                                        </button>
-                                      </div>
+                                            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors mt-3"
+                                         >
+                                            <Copy className="h-4 w-4" /> Copiar Conteúdo para Estudo
+                                         </button>
+                                      ) : (
+                                        <div className="flex gap-3 flex-wrap mt-3">
+                                            <button 
+                                                onClick={() => handleInsert(protocol)}
+                                                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Plus className="h-4 w-4" /> Inserir na Prescrição
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={(e) => startEdit(protocol, e)}
+                                                className="flex-1 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Edit2 className="h-4 w-4" /> Editar Prescrição
+                                            </button>
+
+                                            <button 
+                                                onClick={(e) => handleOpenCopyModal(protocol, e)}
+                                                className="flex-1 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Copy className="h-4 w-4" /> Copiar como Texto
+                                            </button>
+                                        </div>
+                                      )}
                                     </div>
                                 )}
                               </div>

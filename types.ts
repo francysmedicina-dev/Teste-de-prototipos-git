@@ -1,4 +1,3 @@
-
 export interface Medication {
   id: string;
   name: string;
@@ -137,6 +136,7 @@ export interface MedicalProtocol {
   customInstructions: string;
   isFavorite: boolean;
   isCustom: boolean; // True if created by user
+  reference?: string; // Source/Guideline reference
 }
 
 export type CalculatorType = 

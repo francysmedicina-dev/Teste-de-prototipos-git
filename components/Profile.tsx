@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Camera, Save, ArrowLeft, Loader2, User, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Doctor } from '../types';
@@ -8,9 +7,10 @@ interface ProfileProps {
   user: Doctor;
   onUpdateUser: (updatedUser: Doctor) => void;
   onBack: () => void;
+  isStudentMode?: boolean; // New prop
 }
 
-const Profile: React.FC<ProfileProps> = ({ user, onUpdateUser, onBack }) => {
+const Profile: React.FC<ProfileProps> = ({ user, onUpdateUser, onBack, isStudentMode }) => {
   const [formData, setFormData] = useState<Doctor>({ ...user });
   const [confirmPassword, setConfirmPassword] = useState(user.password || '');
   const [showPassword, setShowPassword] = useState(false);
@@ -18,6 +18,9 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdateUser, onBack }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Determine if user is a student (either via prop or CRM check)
+  const isStudent = isStudentMode || user.crm === 'ESTUDANTE';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -117,7 +120,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdateUser, onBack }) => {
               />
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">{formData.name || 'Dr. Usuário'}</h3>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">{formData.name || (isStudent ? 'Acadêmico' : 'Dr. Usuário')}</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">Alterar foto de perfil</p>
             </div>
           </div>
@@ -140,25 +143,31 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdateUser, onBack }) => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CRM / UF</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {isStudent ? "Faculdade" : "CRM / UF"}
+                </label>
                 <input
                   type="text"
                   name="crm"
-                  value={formData.crm}
+                  value={formData.crm === "ESTUDANTE" && isStudent ? "" : formData.crm} // Clear placeholder value for students to edit
                   onChange={handleChange}
-                  required
+                  required={!isStudent}
                   className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-medical-500 outline-none transition-all"
+                  placeholder={isStudent ? "Nome da Universidade" : "12345/SP"}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Especialidade</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {isStudent ? "Especialidade Pretendida" : "Especialidade"}
+                </label>
                 <input
                   type="text"
                   name="specialty"
                   value={formData.specialty}
                   onChange={handleChange}
-                  required
+                  required={!isStudent}
                   className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-medical-500 outline-none transition-all"
+                  placeholder={isStudent ? "Ex: Cardiologia" : "Ex: Cardiologista"}
                 />
               </div>
             </div>

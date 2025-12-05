@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Stethoscope, Sun, Moon, Settings, LogOut, User, HelpCircle, ClipboardList, Siren, FileEdit } from 'lucide-react';
 import { Doctor } from '../types';
@@ -14,52 +13,72 @@ interface HeaderProps {
   onOpenSoap: () => void;
   onLogout: () => void;
   user: Doctor | null;
+  isStudentMode?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ isDarkMode, toggleTheme, onOpenSettings, onOpenProfile, onOpenHelp, onOpenRecords, onOpenHospitalMode, onOpenSoap, onLogout, user }) => {
+const Header: React.FC<HeaderProps> = ({ 
+  isDarkMode, 
+  toggleTheme, 
+  onOpenSettings, 
+  onOpenProfile, 
+  onOpenHelp, 
+  onOpenRecords, 
+  onOpenHospitalMode, 
+  onOpenSoap, 
+  onLogout, 
+  user,
+  isStudentMode 
+}) => {
   return (
     <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30 no-print transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={onOpenRecords}>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => !isStudentMode && onOpenRecords()}>
             <div className="bg-medical-500 p-2 rounded-lg shadow-sm">
               <Stethoscope className="h-6 w-6 text-white" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-none">Prescreve AI</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Assistente de Prescrição Médica</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                {isStudentMode ? "Modo Acadêmico" : "Assistente de Prescrição Médica"}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
              
-             {/* Hospital Mode Button - Red */}
-             <button
-              onClick={onOpenHospitalMode}
-              className="flex items-center gap-2 px-3 py-2 text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 rounded-lg shadow-sm hover:shadow-md transition-all animate-pulse-slow"
-              title="Guia de Emergência e Uso Intra-Hospitalar"
-            >
-              <Siren className="h-5 w-5" />
-              <span className="hidden md:inline text-sm font-bold">Hospitalar</span>
-            </button>
+             {/* Doctor Only Buttons */}
+             {!isStudentMode && (
+               <>
+                {/* Hospital Mode Button - Red */}
+                <button
+                  onClick={onOpenHospitalMode}
+                  className="flex items-center gap-2 px-3 py-2 text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 rounded-lg shadow-sm hover:shadow-md transition-all animate-pulse-slow"
+                  title="Guia de Emergência e Uso Intra-Hospitalar"
+                >
+                  <Siren className="h-5 w-5" />
+                  <span className="hidden md:inline text-sm font-bold">Hospitalar</span>
+                </button>
 
-            {/* SOAP / Evolution Button - Green/Teal */}
-            <button
-              onClick={onOpenSoap}
-              className="flex items-center gap-2 px-3 py-2 text-teal-700 hover:text-white hover:bg-teal-600 dark:text-teal-300 dark:hover:text-white dark:hover:bg-teal-700 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-200 dark:border-teal-800 transition-all shadow-sm"
-              title="Admissão e Evolução (SOAP)"
-            >
-              <FileEdit className="h-5 w-5" />
-              <span className="hidden md:inline text-sm font-bold">Evolução</span>
-            </button>
+                {/* SOAP / Evolution Button - Green/Teal */}
+                <button
+                  onClick={onOpenSoap}
+                  className="flex items-center gap-2 px-3 py-2 text-teal-700 hover:text-white hover:bg-teal-600 dark:text-teal-300 dark:hover:text-white dark:hover:bg-teal-700 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-200 dark:border-teal-800 transition-all shadow-sm"
+                  title="Admissão e Evolução (SOAP)"
+                >
+                  <FileEdit className="h-5 w-5" />
+                  <span className="hidden md:inline text-sm font-bold">Evolução</span>
+                </button>
 
-             <button
-              onClick={onOpenRecords}
-              className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 bg-gray-50 hover:bg-blue-50 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg border border-gray-200 dark:border-gray-600 transition-all"
-              title="Base de Prescrições e Atestados"
-            >
-              <ClipboardList className="h-5 w-5" />
-              <span className="hidden lg:inline text-sm font-medium">Prescrições</span>
-            </button>
+                <button
+                  onClick={onOpenRecords}
+                  className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 bg-gray-50 hover:bg-blue-50 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg border border-gray-200 dark:border-gray-600 transition-all"
+                  title="Base de Prescrições e Atestados"
+                >
+                  <ClipboardList className="h-5 w-5" />
+                  <span className="hidden lg:inline text-sm font-medium">Prescrições</span>
+                </button>
+               </>
+             )}
 
              <button
               onClick={onOpenHelp}
@@ -70,13 +89,16 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, toggleTheme, onOpenSettings
               <span className="hidden lg:inline text-sm font-medium">Ajuda</span>
             </button>
 
-             <button
-              onClick={onOpenSettings}
-              className="p-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white bg-gray-100 dark:bg-gray-700 rounded-full transition-colors"
-              title="Configurações de Impressão (Logo)"
-            >
-              <Settings className="h-5 w-5" />
-            </button>
+             {/* Settings - Only for Doctors */}
+             {!isStudentMode && (
+                <button
+                  onClick={onOpenSettings}
+                  className="p-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white bg-gray-100 dark:bg-gray-700 rounded-full transition-colors"
+                  title="Configurações de Impressão (Logo)"
+                >
+                  <Settings className="h-5 w-5" />
+                </button>
+             )}
             
             <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 hidden md:block"></div>
 
